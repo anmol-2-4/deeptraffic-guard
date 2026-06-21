@@ -29,7 +29,7 @@ def build_pdf(violations, annotated_img, camera_node, location, ts,
     pdf.set_font('Helvetica', 'B', 14)
     pdf.set_text_color(226, 232, 240)
     pdf.set_xy(10, 9)
-    pdf.cell(0, 10, 'DeepTraffic-Guard  —  Violation Evidence Report')
+    pdf.cell(0, 10, 'DeepTraffic-Guard  -  Violation Evidence Report')
     pdf.ln(34)
 
     # ── Meta ────────────────────────────────────────────────────────────────────
@@ -114,7 +114,7 @@ def build_pdf(violations, annotated_img, camera_node, location, ts,
         pdf.set_font('Helvetica', 'B', 12)
         pdf.set_text_color(255, 255, 255)
         pdf.set_xy(10, 5)
-        pdf.cell(0, 8, f"Evidence #{i + 1}  —  {v.get('type', 'Violation')}")
+        pdf.cell(0, 8, f"Evidence #{i + 1}  -  {v.get('type', 'Violation')}")
         pdf.ln(22)
         plate = v.get('license_plate') or 'N/A'
         if plate in ('UNREADABLE', 'OCR_UNAVAILABLE'):
