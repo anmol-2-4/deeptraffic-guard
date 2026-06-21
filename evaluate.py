@@ -42,12 +42,13 @@ GROUND_TRUTH = {
     "eval_images/scooter_couple_1.jpg": {"Helmet Non-Compliance"},  # 2 riders, neither wearing a helmet
     "eval_images/helmeted_rider_1.jpg": set(),  # solo rider, full-face helmet clearly worn
     "eval_images/parked_cars_1.jpg": set(),  # legal curbside parking, no painted no-parking zone visible
+    "eval_images/highway_multilane_1.jpg": set(),  # wide multi-lane highway, all vehicles in normal lanes
 }
 
 # Violation types this test set actually has positive AND/OR negative examples for.
 # Metrics are only reported for these -- we don't fabricate numbers for untested types.
 COVERED_TYPES = ["Helmet Non-Compliance", "Triple Riding", "Red-Light Violation",
-                  "Stop-Line Violation", "Illegal Parking"]
+                  "Stop-Line Violation", "Illegal Parking", "Wrong-Side Driving"]
 
 
 def run_pipeline(path):
@@ -120,7 +121,8 @@ def main():
     overall_acc = (total_tp + total_tn) / max(1, total_tp + total_fp + total_fn + total_tn)
     print(f"\nOverall accuracy across covered types: {overall_acc:.2%}")
     print(f"\nNot yet evaluated (no verified ground truth examples in this set): "
-          f"Seatbelt Non-Compliance, Wrong-Side Driving, Phone Use While Riding/Driving")
+          f"Seatbelt Non-Compliance, Phone Use While Riding/Driving "
+          f"(see README -- both require an external view showing vehicle body + occupant)")
 
     print("\n" + "=" * 78)
     print("COMPUTATIONAL EFFICIENCY")

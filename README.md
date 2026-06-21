@@ -84,23 +84,29 @@ Run `python3 evaluate.py` to reproduce these results. Ground truth was assigned 
 viewing each image before running the pipeline — every label was hand-verified against actual
 image content, not assumed.
 
-**Test set:** 6 real photos (5 sourced from Pexels under their free-use license, 1 real Bengaluru
+**Test set:** 7 real photos (6 sourced from Pexels under their free-use license, 1 real Bengaluru
 traffic photo used throughout development) covering Helmet Non-Compliance, Triple Riding,
-Red-Light/Stop-Line, and Illegal Parking (zone-absent case) with both positive and negative
-examples.
+Red-Light/Stop-Line, Illegal Parking (zone-absent case), and Wrong-Side Driving, with both
+positive and negative examples.
 
 | Violation Type | TP | FP | FN | TN | Precision | Recall | F1 |
 |---|---|---|---|---|---|---|---|
-| Helmet Non-Compliance | 1 | 2 | 0 | 3 | 0.33 | 1.00 | 0.50 |
-| Triple Riding | 1 | 0 | 0 | 5 | 1.00 | 1.00 | 1.00 |
-| Red-Light Violation | 0 | 0 | 0 | 6 | n/a | n/a | n/a |
-| Stop-Line Violation | 0 | 0 | 0 | 6 | n/a | n/a | n/a |
-| Illegal Parking | 0 | 0 | 0 | 6 | n/a | n/a | n/a |
+| Helmet Non-Compliance | 1 | 2 | 0 | 4 | 0.33 | 1.00 | 0.50 |
+| Triple Riding | 1 | 0 | 0 | 6 | 1.00 | 1.00 | 1.00 |
+| Red-Light Violation | 0 | 0 | 0 | 7 | n/a | n/a | n/a |
+| Stop-Line Violation | 0 | 0 | 0 | 7 | n/a | n/a | n/a |
+| Illegal Parking | 0 | 0 | 0 | 7 | n/a | n/a | n/a |
+| Wrong-Side Driving | 0 | 1 | 0 | 6 | 0.00 | n/a | n/a |
 
-**Overall accuracy across covered types: 93.3%**
+**Overall accuracy across covered types: 92.9%**
 
-Not yet evaluated with verified ground truth: Seatbelt Non-Compliance, Wrong-Side Driving,
-Phone Use While Riding/Driving — flagged honestly rather than reported with fabricated numbers.
+The Wrong-Side Driving false positive is the documented multi-lane-highway limitation (see below) —
+included here deliberately rather than excluded, since hiding a known failure would defeat the
+point of an honest evaluation.
+
+Not yet evaluated with verified ground truth: Seatbelt Non-Compliance, Phone Use While Riding/Driving
+— both require an external view showing vehicle body + occupant together (see Engineering
+Investigations below); flagged honestly rather than reported with fabricated numbers.
 
 **Computational efficiency:** ~1.2s/image average (single CPU thread, local hardware) — YOLOv8n
 inference dominates runtime. Object detection backbone (YOLOv8n) reports 37.3 mAP@0.5:0.95 on
