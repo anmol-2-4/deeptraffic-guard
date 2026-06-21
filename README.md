@@ -127,10 +127,46 @@ Not yet evaluated with verified ground truth: Seatbelt Non-Compliance, Phone Use
 — both require an external view showing vehicle body + occupant together (see Engineering
 Investigations below); flagged honestly rather than reported with fabricated numbers.
 
-**Computational efficiency:** ~1.2s/image average (single CPU thread, local hardware) — YOLOv8n
-inference dominates runtime. Object detection backbone (YOLOv8n) reports 37.3 mAP@0.5:0.95 on
-COCO val2017 per Ultralytics' published benchmarks; full task-specific mAP would require a
-larger labeled bounding-box dataset than was feasible to hand-annotate here.
+**Computational efficiency:** ~1.0–1.2s/image average (single CPU thread, local hardware) — YOLOv8n
+inference dominates runtime.
+
+### Object detection mAP
+
+Run `python3 evaluate_map.py` to reproduce. This scores the underlying object-detection quality
+itself (did the detector find the right objects, in the right place, with the right class) —
+separate from the violation-classification table above. Ground truth bounding boxes were hand-drawn
+by visually inspecting every candidate detection box plus manually scanning each image for missed
+objects, evaluated at our system's own output class granularity (`rider`/`person`/`motorcycle`/
+`car`/`truck`) rather than raw COCO classes, since that reflects what the pipeline actually produces.
+
+| Class | GT | TP | FP | FN | AP@0.5 |
+|---|---|---|---|---|---|
+| car | 8 | 7 | 0 | 1 | 0.875 |
+| motorcycle | 11 | 11 | 1 | 0 | 1.000 |
+| person | 2 | 2 | 3 | 0 | 1.000 |
+| rider | 11 | 11 | 5 | 0 | 0.972 |
+| truck | 2 | 1 | 0 | 1 | 0.500 |
+
+**mAP@0.5 across 5 classes: 0.869**
+
+This is mAP@0.5 (single IoU threshold, PASCAL VOC-style) rather than the stricter COCO
+mAP@[0.5:0.95] — the sample size (7 photos) is too small to make that finer breakdown meaningful.
+The `truck` class's 0.500 is from a single missed background vehicle out of 2 instances — not
+statistically meaningful on its own, included for transparency rather than omitted.
+
+The `person`/`rider` false positives are the same mannequins-in-a-cluttered-storefront issue
+documented elsewhere in this README — included here rather than filtered out, since hiding them
+would inflate the score. A first version of this script filtered known-false detections out of the
+prediction list entirely, which silently removed them from the false-positive count too; caught and
+fixed before reporting the final number. Two additional real misses (a heavily-occluded second rider
+on a scooter, and a third rider in the triple-riding photo) are deliberately **not** in this table —
+neither has a tight box that could be hand-drawn with confidence, so scoring them against a guessed
+box would have been less honest than disclosing them as qualitative misses instead.
+
+As a reference point, YOLOv8n (the pretrained, unmodified backbone this system uses) reports 37.3
+mAP@0.5:0.95 on the full COCO val2017 benchmark per Ultralytics' published numbers — a much larger,
+harder, more diverse benchmark than this project's 7-photo sample, so the two numbers aren't directly
+comparable, but both describe the same underlying detector.
 
 **Found and fixed during evaluation:** the rider pipeline (helmet, triple-riding, phone-use
 checks) depended entirely on YOLO confidently detecting the motorcycle class — a single
