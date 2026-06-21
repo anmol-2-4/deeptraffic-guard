@@ -6,6 +6,11 @@ BLUR_LAPLACIAN_THRESH = 80.0
 SHADOW_BLUR_KERNEL    = 51
 
 CONFIDENCE_THRESHOLD = 0.35
+# Motorcycle detection sits upstream of the entire rider pipeline: if a motorcycle's YOLO
+# confidence dips just under CONFIDENCE_THRESHOLD, the rider on it never gets promoted from
+# 'person' to 'rider' and silently skips every rider-based check (helmet, triple-riding,
+# phone use). A lower floor specifically for motorcycles avoids that single point of failure.
+MOTORCYCLE_CONFIDENCE_THRESHOLD = 0.20
 
 HEAD_CROP_RATIO      = 0.32           # top 32% = head region only, avoids neck/chin
 SKIN_HSV_LOWER       = [0,  25,  50]  # skin tones: reasonably tight to avoid chin/neck noise

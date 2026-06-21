@@ -12,3 +12,4 @@ yolov8n.pt
 *.png
 *.mp4
 .env
+eval_images/

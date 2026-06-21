@@ -1,7 +1,10 @@
 import numpy as np
 import streamlit as st
 from ultralytics import YOLO
-from config import MODEL_PATH, CONFIDENCE_THRESHOLD, VEHICLE_CLASSES, PERSON_CLASS, RIDER_IOU_THRESH, PHONE_CLASS
+from config import (
+    MODEL_PATH, CONFIDENCE_THRESHOLD, VEHICLE_CLASSES, PERSON_CLASS,
+    RIDER_IOU_THRESH, PHONE_CLASS, MOTORCYCLE_CONFIDENCE_THRESHOLD,
+)
 
 
 @st.cache_resource
@@ -49,7 +52,11 @@ def run(image_rgb: np.ndarray, conf: float = CONFIDENCE_THRESHOLD) -> list[dict]
     IoPerson and are never promoted.
     """
     model = _load_model()
-    results = model(image_rgb, conf=conf, verbose=False)[0]
+    # Run YOLO at the lowest threshold we need (motorcycle), then filter each class
+    # against its own threshold below — avoids motorcycle under-detection silently
+    # breaking the rider pipeline while keeping other classes at the stricter default.
+    scan_conf = min(conf, MOTORCYCLE_CONFIDENCE_THRESHOLD)
+    results = model(image_rgb, conf=scan_conf, verbose=False)[0]
 
     detections = []
     boxes   = results.boxes.xyxy.cpu().numpy()
@@ -58,6 +65,12 @@ def run(image_rgb: np.ndarray, conf: float = CONFIDENCE_THRESHOLD) -> list[dict]
 
     for box, c, cls in zip(boxes, confs, classes):
         label = model.names[int(cls)]
+        if label == "motorcycle":
+            threshold = MOTORCYCLE_CONFIDENCE_THRESHOLD
+        else:
+            threshold = conf
+        if c < threshold:
+            continue
         if label in VEHICLE_CLASSES or label == PERSON_CLASS or label == "traffic light" or label == PHONE_CLASS:
             detections.append({
                 "bbox":  [int(x) for x in box],
