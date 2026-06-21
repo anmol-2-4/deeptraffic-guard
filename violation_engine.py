@@ -47,8 +47,16 @@ def _no_helmet_score(crop_rgb):
     # glossy highlights that fall inside the skin HSV range (both near H=0), causing
     # false "exposed skin" positives. A real painted shell covers a large fraction of
     # the crop with high saturation; bare skin rarely does. Discount skin_ratio when
-    # shell evidence is strong.
-    shell_mask  = (hsv[:, :, 1] > HELMET_SHELL_SAT_THRESH) & (hsv[:, :, 2] > HELMET_SHELL_VAL_THRESH)
+    # shell evidence is strong -- but only for hues that could plausibly be confused
+    # with skin in the first place (warm/red tones). Without this hue restriction, a
+    # blue/cyan/green shirt collar caught in the crop (common, since the crop spans the
+    # full bbox width and often includes shoulders) gets misread as a "shell" and wrongly
+    # suppresses a genuine skin signal elsewhere in the same crop -- this caused a real
+    # missed detection on a bare-headed rider whose collared shirt had high saturation.
+    skin_confusable_hue = (hsv[:, :, 0] < 25) | (hsv[:, :, 0] > 150)
+    shell_mask  = (skin_confusable_hue
+                   & (hsv[:, :, 1] > HELMET_SHELL_SAT_THRESH)
+                   & (hsv[:, :, 2] > HELMET_SHELL_VAL_THRESH))
     shell_ratio = float(shell_mask.sum()) / total
     if shell_ratio > HELMET_SHELL_RATIO_THRESH:
         skin_ratio *= 0.25
@@ -81,6 +89,20 @@ def _no_helmet_score(crop_rgb):
         hair_score = 0.35 + min(0.20, (dark_ratio - DARK_HAIR_RATIO_THRESH) * 1.5)
         score += hair_score
         reasons.append(f"hair={dark_ratio:.2f},tex={lap_var:.0f}")
+
+    # Signal 4 — Combined partial evidence. Skin and hair each independently need to
+    # clear their own threshold above to contribute -- but a crop can genuinely show a
+    # bare head where neither alone is conclusive (e.g. the crop's width includes some
+    # background/shoulder, diluting both ratios) while still being unambiguous to a human
+    # looking at it. When skin and hair are each present at a meaningful fraction of their
+    # threshold AND texture confirms real detail (not a smooth helmet shell), that
+    # combination is itself strong evidence, even though neither signal alone qualifies.
+    if score == 0.0 and high_texture and skin_ratio > SKIN_RATIO_THRESHOLD * 0.4 \
+            and dark_ratio > DARK_HAIR_RATIO_THRESH * 0.35:
+        combined_score = 0.30 + min(0.15, (skin_ratio / SKIN_RATIO_THRESHOLD
+                                            + dark_ratio / DARK_HAIR_RATIO_THRESH) * 0.05)
+        score += combined_score
+        reasons.append(f"combined: skin={skin_ratio:.2f},hair={dark_ratio:.2f},tex={lap_var:.0f}")
 
     # NOTE: a previous version halved the score whenever skin_ratio was within 1.5x of
     # SKIN_RATIO_THRESHOLD and hair/texture didn't also confirm. That threshold (0.14) is

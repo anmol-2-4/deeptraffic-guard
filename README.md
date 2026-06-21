@@ -91,7 +91,7 @@ examples.
 
 | Violation Type | TP | FP | FN | TN | Precision | Recall | F1 |
 |---|---|---|---|---|---|---|---|
-| Helmet Non-Compliance | 2 | 2 | 0 | 4 | 0.50 | 1.00 | 0.67 |
+| Helmet Non-Compliance | 3 | 2 | 0 | 3 | 0.60 | 1.00 | 0.75 |
 | Triple Riding | 1 | 0 | 0 | 7 | 1.00 | 1.00 | 1.00 |
 | Red-Light Violation | 0 | 0 | 0 | 8 | n/a | n/a | n/a |
 | Stop-Line Violation | 0 | 0 | 0 | 8 | n/a | n/a | n/a |
@@ -100,14 +100,24 @@ examples.
 
 **Overall accuracy across covered types: 93.75%**
 
-A real false negative was found and fixed via this evaluation: a clearly bare-headed rider
-(skin_ratio=0.142, just above the 0.14 detection threshold) was scoring 0.23 -- just under the
-0.28 violation trigger -- because of an overly conservative "borderline" rule that halved the
-score whenever the hair/texture backup signals didn't also confirm. Verified the backup signals
-were failing for unrelated reasons (warm hue lighting, small/blurry crop) rather than genuine
-absence of evidence, and confirmed the rule provided no actual protection against the known
-false-positive cases below (they already crossed the trigger threshold with or without it) before
-removing it.
+Two real false negatives were found and fixed via this evaluation, both on genuinely bare-headed
+riders:
+
+1. A rider scoring 0.23 (just under the 0.28 trigger) because an overly conservative "borderline"
+   rule halved the score whenever hair/texture backup signals didn't also confirm -- even though
+   the primary skin signal had already legitimately fired. Removed after confirming it gave no
+   real protection against the known false-positive cases (they already crossed the trigger either
+   way) while suppressing true positives.
+2. A rider scoring exactly 0.0 because (a) the helmet-shell color-rejection check had no hue
+   restriction, so his blue/grey shirt collar in the crop was misread as a "painted shell" and
+   wrongly discounted his already-low skin signal to near zero, and (b) skin and hair were each
+   genuinely present at a meaningful level (~50% and ~40% of their own thresholds) but neither
+   alone cleared its bar. Fixed by restricting shell-rejection to hues that could plausibly be
+   confused with skin in the first place, and adding a narrow "combined partial evidence" path so
+   corroborating-but-individually-inconclusive skin+hair+texture signals can still trigger together.
+   This second case was caught on the same intersection photo used throughout development --
+   the original ground truth label for that photo only checked the one rider relevant to an
+   earlier bug and incorrectly assumed the rest were clean; corrected after this discovery.
 
 The Wrong-Side Driving false positive is the documented multi-lane-highway limitation (see below) —
 included here deliberately rather than excluded, since hiding a known failure would defeat the

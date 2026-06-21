@@ -36,7 +36,10 @@ ALL_TYPES = [
 
 # image -> set of violation types actually present (hand-verified ground truth)
 GROUND_TRUTH = {
-    "eval_images/bengaluru_intersection_1.jpg": set(),  # 5 riders, all helmeted, no other violations visible
+    # NOTE: originally labeled as "no violations" -- but that label only verified the
+    # red-helmet rider (the original reported bug). A later re-check found the grey-scooter
+    # rider in this same photo is genuinely bare-headed; ground truth corrected accordingly.
+    "eval_images/bengaluru_intersection_1.jpg": {"Helmet Non-Compliance"},
     "eval_images/triple_riding_1.jpg": {"Triple Riding"},  # 3 riders, all helmeted -> triple riding only
     "eval_images/redlight_stop_1.jpg": set(),  # car properly stopped well behind the line
     "eval_images/scooter_couple_1.jpg": {"Helmet Non-Compliance"},  # 2 riders, neither wearing a helmet
