@@ -1,0 +1,14 @@
+venv/
+__pycache__/
+*.pyc
+*.pyo
+evidence/*
+!evidence/.gitkeep
+violations.db
+*.db
+yolov8n.pt
+*.jpg
+*.jpeg
+*.png
+*.mp4
+.env
