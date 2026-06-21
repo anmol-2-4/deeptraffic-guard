@@ -43,6 +43,7 @@ GROUND_TRUTH = {
     "eval_images/helmeted_rider_1.jpg": set(),  # solo rider, full-face helmet clearly worn
     "eval_images/parked_cars_1.jpg": set(),  # legal curbside parking, no painted no-parking zone visible
     "eval_images/highway_multilane_1.jpg": set(),  # wide multi-lane highway, all vehicles in normal lanes
+    "eval_images/bareheaded_rider_1.jpg": {"Helmet Non-Compliance"},  # rider clearly bare-headed, face/hair visible
 }
 
 # Violation types this test set actually has positive AND/OR negative examples for.

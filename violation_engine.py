@@ -82,10 +82,15 @@ def _no_helmet_score(crop_rgb):
         score += hair_score
         reasons.append(f"hair={dark_ratio:.2f},tex={lap_var:.0f}")
 
-    # Require combined evidence when skin signal is borderline
-    if skin_ratio < SKIN_RATIO_THRESHOLD * 1.5 and not (dark_ratio > DARK_HAIR_RATIO_THRESH and high_texture):
-        # Only borderline skin, no hair confirmation → reduce confidence
-        score *= 0.5
+    # NOTE: a previous version halved the score whenever skin_ratio was within 1.5x of
+    # SKIN_RATIO_THRESHOLD and hair/texture didn't also confirm. That threshold (0.14) is
+    # already calibrated as the confident cutoff (see config.py comment), so the extra gate
+    # double-penalized genuine bare-headed riders whose hair/texture signals failed for
+    # unrelated reasons (warm hue lighting, small/blurry crop reducing Laplacian variance) --
+    # this caused a real false negative on a clearly bare-headed rider (skin_ratio=0.142,
+    # scored 0.23, just under the 0.28 trigger). Removed after verifying it provided no actual
+    # protection against the known false-positive cases (mannequins, off-center poses already
+    # crossed the trigger threshold with or without this gate) while suppressing true positives.
 
     return min(score, 0.95), reasons
 

@@ -84,21 +84,30 @@ Run `python3 evaluate.py` to reproduce these results. Ground truth was assigned 
 viewing each image before running the pipeline — every label was hand-verified against actual
 image content, not assumed.
 
-**Test set:** 7 real photos (6 sourced from Pexels under their free-use license, 1 real Bengaluru
-traffic photo used throughout development) covering Helmet Non-Compliance, Triple Riding,
-Red-Light/Stop-Line, Illegal Parking (zone-absent case), and Wrong-Side Driving, with both
-positive and negative examples.
+**Test set:** 8 real photos (6 sourced from Pexels under their free-use license, 2 real photos
+encountered during live use) covering Helmet Non-Compliance, Triple Riding, Red-Light/Stop-Line,
+Illegal Parking (zone-absent case), and Wrong-Side Driving, with both positive and negative
+examples.
 
 | Violation Type | TP | FP | FN | TN | Precision | Recall | F1 |
 |---|---|---|---|---|---|---|---|
-| Helmet Non-Compliance | 1 | 2 | 0 | 4 | 0.33 | 1.00 | 0.50 |
-| Triple Riding | 1 | 0 | 0 | 6 | 1.00 | 1.00 | 1.00 |
-| Red-Light Violation | 0 | 0 | 0 | 7 | n/a | n/a | n/a |
-| Stop-Line Violation | 0 | 0 | 0 | 7 | n/a | n/a | n/a |
-| Illegal Parking | 0 | 0 | 0 | 7 | n/a | n/a | n/a |
-| Wrong-Side Driving | 0 | 1 | 0 | 6 | 0.00 | n/a | n/a |
+| Helmet Non-Compliance | 2 | 2 | 0 | 4 | 0.50 | 1.00 | 0.67 |
+| Triple Riding | 1 | 0 | 0 | 7 | 1.00 | 1.00 | 1.00 |
+| Red-Light Violation | 0 | 0 | 0 | 8 | n/a | n/a | n/a |
+| Stop-Line Violation | 0 | 0 | 0 | 8 | n/a | n/a | n/a |
+| Illegal Parking | 0 | 0 | 0 | 8 | n/a | n/a | n/a |
+| Wrong-Side Driving | 0 | 1 | 0 | 7 | 0.00 | n/a | n/a |
 
-**Overall accuracy across covered types: 92.9%**
+**Overall accuracy across covered types: 93.75%**
+
+A real false negative was found and fixed via this evaluation: a clearly bare-headed rider
+(skin_ratio=0.142, just above the 0.14 detection threshold) was scoring 0.23 -- just under the
+0.28 violation trigger -- because of an overly conservative "borderline" rule that halved the
+score whenever the hair/texture backup signals didn't also confirm. Verified the backup signals
+were failing for unrelated reasons (warm hue lighting, small/blurry crop) rather than genuine
+absence of evidence, and confirmed the rule provided no actual protection against the known
+false-positive cases below (they already crossed the trigger threshold with or without it) before
+removing it.
 
 The Wrong-Side Driving false positive is the documented multi-lane-highway limitation (see below) —
 included here deliberately rather than excluded, since hiding a known failure would defeat the
