@@ -112,10 +112,42 @@ checks) depended entirely on YOLO confidently detecting the motorcycle class —
 borderline detection would silently skip every downstream rider-based check. Fixing this raised
 accuracy on the covered types from 86.7% → 93.3% and Triple Riding recall from 0% → 100%.
 
+## Engineering investigations (and why some things weren't shipped)
+
+**Rain handling.** The preprocessing spec calls for handling rain alongside blur/low-light/shadow.
+Two classical-CV rain signals were implemented and tested against a real rainy street photo plus
+several clear-weather photos: (1) high-pass streak energy (rain streaks should show as broadly
+scattered high-frequency content) and (2) dark-channel haze signature (rain/fog raises the local
+minimum-channel value and reduces contrast). Neither discriminated the real rain photo from normal
+busy/textured street scenes — the rain photo's statistics fell well within the range of ordinary
+clear photos on both signals. Shipping a detector this unreliable would mean misfiring unpredictably
+on clear images or missing real rain entirely, so it was deliberately left out rather than shipped
+to look complete. Reliable rain detection/removal in practice needs either a trained model or a much
+larger calibration set than was feasible to hand-verify here.
+
+**Seatbelt/phone-use require an external view.** Tested directly against two real interior
+dashboard-cam-style photos (driver visible from inside the car). YOLO detected only the `person`
+class in both — no `car` bounding box, because the vehicle's exterior body isn't visible from this
+angle. Both `check_seatbelt` and `check_phone_use` require a person's box to overlap a detected
+`car` box to confirm "this person is inside a vehicle," so they structurally cannot fire on
+interior-view photos. This matches the system's intended input (external traffic-camera footage),
+but is a real boundary worth stating plainly rather than discovering by surprise.
+
+**Mannequins misclassified as people.** A real street photo containing both a 3-person motorcycle
+and a row of storefront mannequins caused two mannequins to be misclassified as riders (YOLO was
+*more* confident on the mannequins — 0.88 and 0.83 — than on the real riders at 0.57–0.72, so a
+confidence-based filter would not help). Distinguishing a static mannequin from a real person isn't
+reliably solvable from a single still frame's bounding-box geometry alone. The video pipeline
+already processes sequential frames, so a concrete, technically sound next step is a motion-based
+filter: a real rider's bounding box shifts across frames while a mannequin's stays fixed — that
+signal doesn't exist yet but is a natural extension of code already in place.
+
 ## Known limitations
 
 - Helmet/seatbelt detection use HSV/texture heuristics rather than a trained classifier — accuracy depends on lighting and image resolution, especially for small/distant riders
 - Wrong-side driving assumes a simple two-lane road with visible lane markings; doesn't generalize to wide multi-lane highways
 - Stop-line and parking-zone detection require visible road paint; violations tied to those zones are skipped (not assumed) when no markings are detected
-- In cluttered scenes, YOLO can misclassify background mannequins/posters as people, which can be incorrectly linked as a "rider" to a nearby motorcycle
+- In cluttered scenes, YOLO can misclassify background mannequins/posters as people, which can be incorrectly linked as a "rider" to a nearby motorcycle (see above — confidence-based filtering does not help)
 - The head-crop heuristic (top 32% of person bbox) assumes a roughly centered, upright head; it can miss when a rider's head is significantly off-center (e.g. looking back over their shoulder) within an unusually tall bounding box
+- Rain detection was attempted and deliberately not shipped after failing validation (see above)
+- Seatbelt and phone-use checks require an external view showing both vehicle body and occupant; they cannot fire on interior/dashboard-cam-style photos (see above)
