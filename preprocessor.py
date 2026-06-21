@@ -29,16 +29,23 @@ def enhance(image_rgb: np.ndarray) -> tuple[np.ndarray, dict]:
         lab[:, :, 0] = clahe.apply(l_channel)
         img = cv2.cvtColor(lab, cv2.COLOR_LAB2RGB)
 
-    # Stage 3: Shadow normalization via illumination division
-    gray2 = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY).astype(np.float32)
+    # Stage 3: Shadow normalization via illumination division, applied to the V
+    # (brightness) channel only. Blending a grayscale map into RGB (the previous
+    # approach) desaturates every color by ~40% whenever this stage fires, which
+    # corrupts all downstream color-based checks (helmet shell color, red-light
+    # detection, sign/parking-zone color masks). Operating on V in HSV corrects
+    # uneven brightness while leaving hue/saturation untouched.
+    hsv2 = cv2.cvtColor(img, cv2.COLOR_RGB2HSV)
+    v_chan = hsv2[:, :, 2].astype(np.float32)
     k = SHADOW_BLUR_KERNEL
-    illum = cv2.GaussianBlur(gray2, (k, k), 0)
-    ratio = gray2 / (illum + 1.0)
+    illum = cv2.GaussianBlur(v_chan, (k, k), 0)
+    ratio = v_chan / (illum + 1.0)
     # Check if shadow is significant (std of ratio > 0.05 means uneven illumination)
     if ratio.std() > 0.05:
         diag["shadow_corrected"] = True
-        norm = cv2.normalize(ratio, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
-        norm_rgb = cv2.cvtColor(norm, cv2.COLOR_GRAY2RGB)
-        img = cv2.addWeighted(img, 0.6, norm_rgb, 0.4, 0)
+        norm_v = cv2.normalize(ratio, None, 0, 255, cv2.NORM_MINMAX)
+        blended_v = cv2.addWeighted(v_chan, 0.6, norm_v, 0.4, 0)
+        hsv2[:, :, 2] = np.clip(blended_v, 0, 255).astype(np.uint8)
+        img = cv2.cvtColor(hsv2, cv2.COLOR_HSV2RGB)
 
     return img, diag
