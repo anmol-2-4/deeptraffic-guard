@@ -345,23 +345,121 @@ with tab_analyze:
     </div>
     """, unsafe_allow_html=True)
 
-    uploaded = st.file_uploader(
-        "Upload traffic camera image",
+    uploaded_files = st.file_uploader(
+        "Upload traffic camera image(s)",
         type=["jpg", "jpeg", "png"],
         label_visibility="collapsed",
+        accept_multiple_files=True,
+        help="Upload multiple images at once for batch processing across a camera fleet.",
     )
 
-    if not uploaded:
+    if not uploaded_files:
         st.markdown(f"""
         <div style="text-align:center; padding:70px 20px; background:{SURFACE};
                     border:1px dashed {BORDER}; border-radius:14px; margin-top:10px;">
           <div style="font-size:2.8rem">📷</div>
-          <div style="font-size:1rem; color:#475569; margin-top:12px;">Drop a traffic camera image to begin</div>
-          <div style="font-size:0.78rem; color:{SUBTLE}; margin-top:6px;">JPG · JPEG · PNG</div>
+          <div style="font-size:1rem; color:#475569; margin-top:12px;">Drop one or more traffic camera images to begin</div>
+          <div style="font-size:0.78rem; color:{SUBTLE}; margin-top:6px;">JPG · JPEG · PNG &nbsp;·&nbsp; multiple files supported for batch analysis</div>
         </div>
         """, unsafe_allow_html=True)
         st.stop()
 
+    # ── Batch mode: 2+ images uploaded ───────────────────────────────────────────
+    if len(uploaded_files) > 1:
+        st.markdown(f"""
+        <div style="margin-bottom:14px">
+          <h3 style="margin:0;padding:0;font-size:1.1rem;">Batch Analysis &nbsp;·&nbsp; {len(uploaded_files)} images</h3>
+          <span style="font-size:0.78rem;color:{SUBTLE};">Simulates fleet-scale processing across multiple camera frames</span>
+        </div>
+        """, unsafe_allow_html=True)
+
+        bbar = st.progress(0, "Starting batch...")
+        batch_t0 = time.time()
+        batch_results = []
+
+        for i, f in enumerate(uploaded_files):
+            f_bytes = f.getvalue()
+            f_hash = hashlib.md5(f_bytes).hexdigest()
+            f_img = np.array(Image.open(io.BytesIO(f_bytes)).convert("RGB"))
+
+            img_t0 = time.time()
+            f_proc, f_diag = (preprocessor.enhance(f_img) if run_preprocess else (f_img.copy(), {}))
+            f_sy, f_pz, f_signs, f_zmeta = road_detector.auto_detect_zones(f_proc)
+            f_dets = detector.run(f_proc, conf=conf_thresh)
+            f_signs = [s for s in f_signs if not _overlaps_vehicle(s["bbox"], f_dets)]
+            f_viols = violation_engine.evaluate_all(f_dets, f_proc, f_sy, f_pz)
+            f_ann, f_ev_paths = annotator.render(f_proc, f_viols, f_dets, f_sy, f_pz, camera_node, f_signs)
+            img_ms = (time.time() - img_t0) * 1000
+
+            batch_results.append({
+                "name": f.name, "hash": f_hash, "annotated": f_ann,
+                "detections": f_dets, "violations": f_viols, "ev_paths": f_ev_paths,
+                "ms": img_ms,
+            })
+            bbar.progress((i + 1) / len(uploaded_files), f"Processed {i+1}/{len(uploaded_files)} — {f.name}")
+
+        batch_elapsed = time.time() - batch_t0
+        bbar.empty()
+
+        total_objects = sum(len(r["detections"]) for r in batch_results)
+        total_viols = sum(len(r["violations"]) for r in batch_results)
+        throughput = len(batch_results) / batch_elapsed if batch_elapsed > 0 else 0
+
+        k1, k2, k3, k4 = st.columns(4)
+        kpi(len(batch_results), "Images Processed", cols=k1)
+        kpi(total_objects, "Total Objects", cols=k2)
+        kpi(total_viols, "Total Violations", cols=k3)
+        kpi(f"{throughput:.2f}/s", "Throughput", sub=f"{batch_elapsed:.1f}s total", cols=k4)
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        if total_viols:
+            banner(f"{total_viols} violation(s) found across {len(batch_results)} images", "red")
+        else:
+            banner("No violations detected across this batch", "green")
+
+        st.markdown('<div class="section-lbl">PER-IMAGE RESULTS</div>', unsafe_allow_html=True)
+        for r in batch_results:
+            with st.expander(f"{'⚠' if r['violations'] else '✓'}  {r['name']}  —  "
+                              f"{len(r['violations'])} violation(s)  ·  {r['ms']:.0f}ms"):
+                ec1, ec2 = st.columns([3, 2])
+                ec1.image(r["annotated"], use_container_width=True)
+                with ec2:
+                    if not r["violations"]:
+                        st.caption("No violations found.")
+                    for v in r["violations"]:
+                        violation_card(v)
+
+        # Bulk export: ZIP of all annotated images
+        import zipfile
+        zip_buf = io.BytesIO()
+        with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for r in batch_results:
+                img_buf = io.BytesIO()
+                Image.fromarray(r["annotated"]).save(img_buf, format="PNG")
+                zf.writestr(f"{r['hash'][:8]}_{r['name']}.png", img_buf.getvalue())
+
+        st.markdown('<div class="section-lbl">EXPORT</div>', unsafe_allow_html=True)
+        dl1, dl2 = st.columns(2)
+        dl1.download_button(
+            "⬇  Download All Annotated Images (ZIP)",
+            data=zip_buf.getvalue(),
+            file_name="batch_evidence.zip",
+            mime="application/zip",
+            use_container_width=True,
+        )
+        if total_viols and dl2.button("💾  Save All Violations to Database", type="primary", use_container_width=True):
+            ts_batch = time.strftime("%Y-%m-%d %H:%M:%S")
+            saved = 0
+            for r in batch_results:
+                if r["violations"]:
+                    save_all(r["violations"], r["hash"], ts_batch, r["ev_paths"], location)
+                    saved += len(r["violations"])
+            st.toast(f"Saved {saved} violation(s) across {len(batch_results)} images.")
+
+        st.stop()
+
+    # ── Single-image mode ─────────────────────────────────────────────────────────
+    uploaded = uploaded_files[0]
     img_bytes  = uploaded.getvalue()
     frame_hash = hashlib.md5(img_bytes).hexdigest()
     pil_img    = Image.open(io.BytesIO(img_bytes)).convert("RGB")
