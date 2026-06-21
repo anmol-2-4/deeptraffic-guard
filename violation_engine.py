@@ -112,6 +112,13 @@ def check_helmet(detections, image_rgb):
         if crop.size == 0 or crop.shape[0] < 4 or crop.shape[1] < 4:
             continue
 
+        # Tiny/distant riders produce a head crop only a few pixels tall, which makes
+        # the HSV and Laplacian-variance signals numerically unstable. Upscale before
+        # analysis so the same thresholds apply consistently regardless of distance.
+        if crop.shape[0] < 24 or crop.shape[1] < 24:
+            scale = max(24 / crop.shape[0], 24 / crop.shape[1])
+            crop = cv2.resize(crop, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+
         score, reasons = _no_helmet_score(crop)
 
         # Very small persons get capped confidence (analysis is unreliable)
