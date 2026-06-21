@@ -49,3 +49,7 @@ EVIDENCE_DIR = "evidence"
 VEHICLE_CLASSES     = {"car", "motorcycle", "bus", "truck", "bicycle"}
 PERSON_CLASS        = "person"
 TRAFFIC_LIGHT_CLASS = "traffic light"
+PHONE_CLASS         = "cell phone"
+
+PHONE_PERSON_IOU_THRESH  = 0.05   # phone just needs to touch person bbox
+PHONE_VEHICLE_IOU_THRESH = 0.10   # person must overlap vehicle to count as driver

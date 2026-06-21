@@ -1,7 +1,7 @@
 import numpy as np
 import streamlit as st
 from ultralytics import YOLO
-from config import MODEL_PATH, CONFIDENCE_THRESHOLD, VEHICLE_CLASSES, PERSON_CLASS, RIDER_IOU_THRESH
+from config import MODEL_PATH, CONFIDENCE_THRESHOLD, VEHICLE_CLASSES, PERSON_CLASS, RIDER_IOU_THRESH, PHONE_CLASS
 
 
 @st.cache_resource
@@ -58,7 +58,7 @@ def run(image_rgb: np.ndarray, conf: float = CONFIDENCE_THRESHOLD) -> list[dict]
 
     for box, c, cls in zip(boxes, confs, classes):
         label = model.names[int(cls)]
-        if label in VEHICLE_CLASSES or label == PERSON_CLASS or label == "traffic light":
+        if label in VEHICLE_CLASSES or label == PERSON_CLASS or label == "traffic light" or label == PHONE_CLASS:
             detections.append({
                 "bbox":  [int(x) for x in box],
                 "class": label,

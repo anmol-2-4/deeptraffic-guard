@@ -1,6 +1,9 @@
 import io
+import os
+import cv2
 import time
 import hashlib
+import tempfile
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -13,6 +16,7 @@ import annotator
 import database
 import road_detector
 from ocr_engine import extract_plate
+from report_generator import build_pdf
 from config import CONFIDENCE_THRESHOLD
 
 # ── Page config ───────────────────────────────────────────────────────────────
@@ -23,6 +27,9 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 database.init_db()
+
+if "video_results" not in st.session_state:
+    st.session_state.video_results = None
 
 # ── Theme constants ───────────────────────────────────────────────────────────
 BG       = "#0b0f1a"
@@ -275,6 +282,21 @@ def chip(text, kind="grey"):
     return f'<span class="chip chip-{kind}">{text}</span>'
 
 
+def _overlaps_vehicle(sign_bbox, dets, iou_thresh=0.25):
+    sx1, sy1, sx2, sy2 = sign_bbox
+    for d in dets:
+        if d["class"] not in {"car", "motorcycle", "bus", "truck", "rider"}:
+            continue
+        vx1, vy1, vx2, vy2 = d["bbox"]
+        ix1, iy1 = max(sx1, vx1), max(sy1, vy1)
+        ix2, iy2 = min(sx2, vx2), min(sy2, vy2)
+        inter = max(0, ix2 - ix1) * max(0, iy2 - iy1)
+        s_area = max(1, (sx2 - sx1) * (sy2 - sy1))
+        if inter / s_area > iou_thresh:
+            return True
+    return False
+
+
 def save_all(violations, frame_hash, ts, ev_paths, location):
     for i, v in enumerate(violations):
         database.insert_violation({
@@ -309,7 +331,7 @@ with st.sidebar:
 
 
 # ── Main tabs ─────────────────────────────────────────────────────────────────
-tab_analyze, tab_dash = st.tabs(["  Analyze Image  ", "  Dashboard  "])
+tab_analyze, tab_video, tab_dash = st.tabs(["  Analyze Image  ", "  Analyze Video  ", "  Dashboard  "])
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -358,22 +380,6 @@ with tab_analyze:
     bar.progress(45, "Running object detection...")
     t0 = time.time()
     detections = detector.run(proc_rgb, conf=conf_thresh)
-
-    # Filter sign detections that overlap with any vehicle (red fairing / body panels
-    # trigger false "STOP/NO ENTRY" signs — exclude anything inside a vehicle bbox)
-    def _overlaps_vehicle(sign_bbox, dets, iou_thresh=0.25):
-        sx1, sy1, sx2, sy2 = sign_bbox
-        for d in dets:
-            if d["class"] not in {"car", "motorcycle", "bus", "truck", "rider"}:
-                continue
-            vx1, vy1, vx2, vy2 = d["bbox"]
-            ix1, iy1 = max(sx1, vx1), max(sy1, vy1)
-            ix2, iy2 = min(sx2, vx2), min(sy2, vy2)
-            inter = max(0, ix2-ix1) * max(0, iy2-iy1)
-            s_area = max(1, (sx2-sx1)*(sy2-sy1))
-            if inter / s_area > iou_thresh:
-                return True
-        return False
 
     signs = [s for s in signs if not _overlaps_vehicle(s["bbox"], detections)]
     zmeta["signs_detected"] = len(signs)
@@ -434,7 +440,7 @@ with tab_analyze:
         st.markdown(chips_html + "<br>", unsafe_allow_html=True)
         st.image(annotated, use_container_width=True)
 
-        col_dl, col_pre = st.columns([1, 1])
+        col_dl, col_pdf = st.columns([1, 1])
         buf = io.BytesIO()
         Image.fromarray(annotated).save(buf, format="PNG")
         col_dl.download_button(
@@ -444,6 +450,15 @@ with tab_analyze:
             mime="image/png",
             use_container_width=True,
         )
+        if violations:
+            pdf_bytes = build_pdf(violations, annotated, camera_node, location, ts, ev_paths)
+            col_pdf.download_button(
+                "📄  Export PDF Report",
+                data=pdf_bytes,
+                file_name=f"report_{frame_hash[:8]}.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+            )
 
         if run_preprocess and any(diag.values()):
             with st.expander("Image enhancement details"):
@@ -519,7 +534,205 @@ with tab_analyze:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  TAB 2 — Dashboard
+#  TAB 2 — Video Analyzer
+# ══════════════════════════════════════════════════════════════════════════════
+with tab_video:
+    st.markdown(f"""
+    <div style="margin-bottom:20px">
+      <h2 style="margin:0;padding:0">Video Violation Scanner</h2>
+      <span style="font-size:0.78rem;color:{SUBTLE};">{camera_node} &nbsp;·&nbsp; {location}</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    uploaded_vid = st.file_uploader(
+        "Upload traffic video",
+        type=["mp4", "avi", "mov", "mkv"],
+        key="video_upload",
+        label_visibility="collapsed",
+    )
+
+    if not uploaded_vid:
+        st.markdown(f"""
+        <div style="text-align:center; padding:70px 20px; background:{SURFACE};
+                    border:1px dashed {BORDER}; border-radius:14px; margin-top:10px;">
+          <div style="font-size:2.8rem">🎥</div>
+          <div style="font-size:1rem; color:#475569; margin-top:12px;">
+            Drop a traffic video to scan for violations</div>
+          <div style="font-size:0.78rem; color:{SUBTLE}; margin-top:6px;">
+            MP4 · AVI · MOV · MKV &nbsp;·&nbsp; Max 50 MB</div>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        vid_bytes = uploaded_vid.read()
+        if len(vid_bytes) > 50 * 1024 * 1024:
+            banner("Video exceeds 50 MB — please upload a shorter clip.", "red")
+        else:
+            vleft, vright = st.columns([3, 2], gap="large")
+
+            with vleft:
+                st.video(vid_bytes)
+
+            with vright:
+                sample_n = st.slider("Process every N frames", 1, 15, 5,
+                                     help="Higher = faster but fewer frames checked")
+                st.markdown("<br>", unsafe_allow_html=True)
+
+                if st.button("▶  Analyze Video", type="primary", use_container_width=True):
+                    st.session_state.video_results = None
+
+                    tmp_in = tempfile.NamedTemporaryFile(suffix='.mp4', delete=False)
+                    tmp_in.write(vid_bytes)
+                    tmp_in.close()
+                    tmp_out = tempfile.NamedTemporaryFile(suffix='.mp4', delete=False)
+                    tmp_out.close()
+                    out_path = tmp_out.name
+
+                    try:
+                        cap     = cv2.VideoCapture(tmp_in.name)
+                        total   = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or 1
+                        fps_v   = cap.get(cv2.CAP_PROP_FPS) or 25
+                        fw      = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                        fh_v    = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                        fourcc  = cv2.VideoWriter_fourcc(*'mp4v')
+                        writer  = cv2.VideoWriter(out_path, fourcc, fps_v, (fw, fh_v))
+
+                        vbar       = st.progress(0, "Analyzing…")
+                        all_viols  = []
+                        key_frames = []
+                        last_ann   = None
+                        fidx       = 0
+
+                        while True:
+                            ret, frame = cap.read()
+                            if not ret:
+                                break
+                            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+                            if fidx % sample_n == 0:
+                                proc, _ = (preprocessor.enhance(frame_rgb)
+                                           if run_preprocess else (frame_rgb.copy(), {}))
+                                sy, pz, sg, _ = road_detector.auto_detect_zones(proc)
+                                dets  = detector.run(proc, conf=conf_thresh)
+                                sg    = [s for s in sg if not _overlaps_vehicle(s["bbox"], dets)]
+                                viols = violation_engine.evaluate_all(dets, proc, sy, pz)
+                                ann, _ = annotator.render(proc, viols, dets, sy, pz, camera_node, sg)
+                                all_viols.extend(viols)
+                                if viols and len(key_frames) < 6:
+                                    key_frames.append((ann.copy(), list(viols)))
+                                last_ann = ann
+
+                            out_frame = last_ann if last_ann is not None else frame_rgb
+                            writer.write(cv2.cvtColor(out_frame, cv2.COLOR_RGB2BGR))
+                            fidx += 1
+                            if fidx % 15 == 0:
+                                vbar.progress(min(fidx / total, 1.0),
+                                              f"Frame {fidx} / {total}")
+
+                        cap.release()
+                        writer.release()
+                        vbar.progress(1.0, "Done ✓")
+
+                        with open(out_path, 'rb') as f:
+                            vid_out_bytes = f.read()
+
+                        v_ts = time.strftime("%Y-%m-%d %H:%M:%S")
+                        st.session_state.video_results = {
+                            "violations":  all_viols,
+                            "video_bytes": vid_out_bytes,
+                            "key_frames":  key_frames,
+                            "stats":       {"processed": max(1, (fidx + sample_n - 1) // sample_n),
+                                            "total": total},
+                            "ts":          v_ts,
+                        }
+                    finally:
+                        try:
+                            os.unlink(tmp_in.name)
+                        except Exception:
+                            pass
+                        try:
+                            os.unlink(out_path)
+                        except Exception:
+                            pass
+
+                # ── Results ───────────────────────────────────────────────────
+                res = st.session_state.video_results
+                if res:
+                    all_viols = res["violations"]
+                    vk1, vk2, vk3 = st.columns(3)
+                    kpi(res["stats"]["total"],     "Total Frames", cols=vk1)
+                    kpi(res["stats"]["processed"], "Analyzed",     cols=vk2)
+                    kpi(len(all_viols),            "Violations",   cols=vk3)
+                    st.markdown("<br>", unsafe_allow_html=True)
+
+                    if all_viols:
+                        banner(f"{len(all_viols)} violation(s) detected across video", "red")
+                        st.markdown('<div class="section-lbl">BY TYPE</div>',
+                                    unsafe_allow_html=True)
+                        by_type = {}
+                        for v in all_viols:
+                            by_type[v["type"]] = by_type.get(v["type"], 0) + 1
+                        for vtype, cnt in sorted(by_type.items(), key=lambda x: -x[1]):
+                            sev   = next((v["severity"] for v in all_viols
+                                          if v["type"] == vtype), "Medium")
+                            color = SEV_COLOR.get(sev, "#94a3b8")
+                            bg    = SEV_BG.get(sev, SURFACE)
+                            st.markdown(f"""
+                            <div class="v-card" style="background:{bg};border-color:{color};">
+                              <div class="v-header">
+                                <span class="v-type">{vtype}</span>
+                                <span class="v-badge" style="background:{color};color:#fff;"
+                                >{cnt}×</span>
+                              </div>
+                            </div>""", unsafe_allow_html=True)
+                    else:
+                        banner("No violations detected in this video", "green")
+
+                    st.markdown('<div class="section-lbl">EXPORTS</div>',
+                                unsafe_allow_html=True)
+                    ex1, ex2 = st.columns(2)
+                    ex1.download_button(
+                        "⬇  Annotated Video",
+                        data=res["video_bytes"],
+                        file_name="annotated_video.mp4",
+                        mime="video/mp4",
+                        use_container_width=True,
+                    )
+                    if res["key_frames"] and all_viols:
+                        ann_img, _ = res["key_frames"][-1]
+                        pdf_bytes  = build_pdf(
+                            all_viols, ann_img, camera_node, location,
+                            res["ts"], [], frame_stats=res["stats"],
+                        )
+                        ex2.download_button(
+                            "📄  PDF Report",
+                            data=pdf_bytes,
+                            file_name="video_report.pdf",
+                            mime="application/pdf",
+                            use_container_width=True,
+                        )
+
+            # ── Key frames ────────────────────────────────────────────────────
+            res = st.session_state.video_results
+            if res and res["key_frames"]:
+                st.markdown('<div class="section-lbl">KEY VIOLATION FRAMES</div>',
+                            unsafe_allow_html=True)
+                kf_list = res["key_frames"][:3]
+                kf_cols = st.columns(len(kf_list))
+                for i, (kf_img, kf_viols) in enumerate(kf_list):
+                    with kf_cols[i]:
+                        st.image(kf_img, use_container_width=True)
+                        for kv in kf_viols[:2]:
+                            sev   = kv.get("severity", "Medium")
+                            color = SEV_COLOR.get(sev, "#94a3b8")
+                            st.markdown(
+                                f'<div style="font-size:0.74rem;color:{color};">'
+                                f'⚠ {kv["type"]}</div>',
+                                unsafe_allow_html=True,
+                            )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  TAB 3 — Dashboard
 # ══════════════════════════════════════════════════════════════════════════════
 with tab_dash:
     st.markdown(f"""

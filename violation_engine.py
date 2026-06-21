@@ -11,6 +11,7 @@ from config import (
     TRAFFIC_LIGHT_CROP_TOP_FRAC,
     RED_HSV1_LOWER, RED_HSV1_UPPER, RED_HSV2_LOWER, RED_HSV2_UPPER, RED_PIXEL_RATIO_THRESH,
     MAX_RIDERS_PER_BIKE, WRONG_SIDE_HOUGH_THRESH, WRONG_SIDE_MIN_LINE_FRAC,
+    PHONE_CLASS, PHONE_PERSON_IOU_THRESH, PHONE_VEHICLE_IOU_THRESH,
 )
 
 
@@ -363,6 +364,71 @@ def check_seatbelt(detections, image_rgb):
     return violations
 
 
+def _iou_fraction(a, b):
+    """Intersection / area_of_a."""
+    ix1, iy1 = max(a[0], b[0]), max(a[1], b[1])
+    ix2, iy2 = min(a[2], b[2]), min(a[3], b[3])
+    inter = max(0, ix2 - ix1) * max(0, iy2 - iy1)
+    area_a = max(1, (a[2] - a[0]) * (a[3] - a[1]))
+    return inter / area_a
+
+
+def check_phone_use(detections):
+    """
+    Phone use while driving/riding.
+
+    Triggers when a detected 'cell phone' bbox overlaps:
+      • a rider  (motorcycle phone use), OR
+      • a person whose bbox is inside a car/bus/truck bbox (driver phone use).
+    """
+    violations = []
+    phones   = [d for d in detections if d["class"] == PHONE_CLASS]
+    riders   = [d for d in detections if d["class"] == "rider"]
+    persons  = [d for d in detections if d["class"] == "person"]
+    vehicles = [d for d in detections if d["class"] in {"car", "bus", "truck"}]
+
+    flagged_phones = set()
+
+    for pi, phone in enumerate(phones):
+        # Case 1: phone overlaps a motorcycle rider
+        for r in riders:
+            if _iou_fraction(phone["bbox"], r["bbox"]) >= PHONE_PERSON_IOU_THRESH:
+                violations.append({
+                    "type":          "Phone Use While Riding",
+                    "severity":      "Critical",
+                    "bbox":          r["bbox"],
+                    "vehicle_class": "motorcycle",
+                    "confidence":    0.82,
+                    "license_plate": "N/A",
+                })
+                flagged_phones.add(pi)
+                break
+
+        if pi in flagged_phones:
+            continue
+
+        # Case 2: phone overlaps a person who is inside a car/bus/truck
+        for person in persons:
+            if _iou_fraction(phone["bbox"], person["bbox"]) < PHONE_PERSON_IOU_THRESH:
+                continue
+            for veh in vehicles:
+                if _iou_fraction(person["bbox"], veh["bbox"]) >= PHONE_VEHICLE_IOU_THRESH:
+                    violations.append({
+                        "type":          "Phone Use While Driving",
+                        "severity":      "Critical",
+                        "bbox":          veh["bbox"],
+                        "vehicle_class": veh["class"],
+                        "confidence":    0.80,
+                        "license_plate": "N/A",
+                    })
+                    flagged_phones.add(pi)
+                    break
+            if pi in flagged_phones:
+                break
+
+    return violations
+
+
 def evaluate_all(detections, image_rgb, stop_line_y, parking_zone):
     """Run all violation checkers and return deduplicated list."""
     violations = []
@@ -373,6 +439,7 @@ def evaluate_all(detections, image_rgb, stop_line_y, parking_zone):
     violations += check_wrong_side(detections, image_rgb)
     violations += check_illegal_parking(detections, parking_zone)
     violations += check_seatbelt(detections, image_rgb)
+    violations += check_phone_use(detections)
 
     # Deduplicate by type + bbox proximity
     seen = set()
