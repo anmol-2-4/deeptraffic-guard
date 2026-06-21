@@ -18,6 +18,13 @@ DARK_HAIR_RATIO_THRESH = 0.30         # >30% dark pixels required (avoid partial
 HELMET_TEXTURE_THRESH  = 280.0        # high variance = genuine hair texture (not helmet pattern)
 MIN_PERSON_HEIGHT_PX   = 20
 
+# Colored helmet shells (red/orange/yellow) have glossy highlights whose hue overlaps
+# fair skin tones near H=0. A painted shell covers most of the crop with high saturation,
+# unlike real skin which rarely exceeds this saturation over such a large area.
+HELMET_SHELL_SAT_THRESH   = 140
+HELMET_SHELL_VAL_THRESH   = 90
+HELMET_SHELL_RATIO_THRESH = 0.35
+
 RIDER_IOU_THRESH     = 0.15   # intersection/person_area; walkers near bikes score ~0, actual riders score 0.15+
 
 TORSO_CROP_Y_START       = 0.20

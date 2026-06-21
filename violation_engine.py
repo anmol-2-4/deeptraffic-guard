@@ -6,6 +6,7 @@ from config import (
     SKIN_HSV_LOWER2, SKIN_HSV_UPPER2, SKIN_RATIO_THRESHOLD,
     DARK_HAIR_V_MAX, DARK_HAIR_RATIO_THRESH, HELMET_TEXTURE_THRESH,
     MIN_PERSON_HEIGHT_PX,
+    HELMET_SHELL_SAT_THRESH, HELMET_SHELL_VAL_THRESH, HELMET_SHELL_RATIO_THRESH,
     TORSO_CROP_Y_START, TORSO_CROP_Y_END, TORSO_CROP_X_INSET,
     DIAGONAL_EDGE_MIN_ANGLE, DIAGONAL_EDGE_MAX_ANGLE, DIAGONAL_DENSITY_THRESH,
     TRAFFIC_LIGHT_CROP_TOP_FRAC,
@@ -42,6 +43,16 @@ def _no_helmet_score(crop_rgb):
                      np.array(SKIN_HSV_UPPER2, np.uint8))
     skin_ratio = cv2.countNonZero(cv2.bitwise_or(m1, m2)) / total
 
+    # Signal 0 — Colored helmet shell rejection. Vivid red/orange/yellow shells have
+    # glossy highlights that fall inside the skin HSV range (both near H=0), causing
+    # false "exposed skin" positives. A real painted shell covers a large fraction of
+    # the crop with high saturation; bare skin rarely does. Discount skin_ratio when
+    # shell evidence is strong.
+    shell_mask  = (hsv[:, :, 1] > HELMET_SHELL_SAT_THRESH) & (hsv[:, :, 2] > HELMET_SHELL_VAL_THRESH)
+    shell_ratio = float(shell_mask.sum()) / total
+    if shell_ratio > HELMET_SHELL_RATIO_THRESH:
+        skin_ratio *= 0.25
+
     # Signal 2 — Dark hair pixels (head viewed from above/behind)
     # Restrict to brownish/dark-reddish tones (H < 35 or H > 150 in HSV).
     # This excludes green camo helmet patterns (H ≈ 50-90) and blue helmets.
@@ -63,7 +74,7 @@ def _no_helmet_score(crop_rgb):
         # Skin clearly exposed: scale with how much skin
         skin_score = 0.45 + min(0.35, (skin_ratio - SKIN_RATIO_THRESHOLD) * 4)
         score += skin_score
-        reasons.append(f"skin={skin_ratio:.2f}")
+        reasons.append(f"skin={skin_ratio:.2f},shell={shell_ratio:.2f}")
 
     if dark_ratio > DARK_HAIR_RATIO_THRESH and high_texture:
         # Dark + very high texture (true hair has Laplacian > 280, camo helmets don't)
