@@ -36,6 +36,7 @@ Upload a traffic camera image or video, and the system automatically:
 ## Features
 
 - **Image analysis** — single-frame upload with full violation pipeline and annotated evidence image
+- **Batch processing** — upload multiple images at once for fleet-scale analysis, with aggregate throughput stats and bulk ZIP export
 - **Video analysis** — frame-sampled video scanning with annotated output video and violation timeline
 - **PDF evidence reports** — auto-generated report with annotated frame, violation table, and per-violation evidence pages
 - **Analytics dashboard** — violation trends by type/severity/hour, searchable record history, CSV export
@@ -76,6 +77,8 @@ ocr_engine.py           License plate OCR
 report_generator.py     PDF evidence report generation
 database.py             SQLite storage and analytics queries
 config.py               All tunable thresholds in one place
+evaluate.py             Violation-level Precision/Recall/F1 evaluation harness
+evaluate_map.py         Object-detection mAP@0.5 evaluation harness
 ```
 
 ## Performance evaluation
