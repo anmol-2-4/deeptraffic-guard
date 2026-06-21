@@ -337,7 +337,7 @@ tab_analyze, tab_video, tab_dash = st.tabs(["  Analyze Image  ", "  Analyze Vide
 # ══════════════════════════════════════════════════════════════════════════════
 #  TAB 1 — Analyze
 # ══════════════════════════════════════════════════════════════════════════════
-with tab_analyze:
+def _render_analyze_tab():
     st.markdown(f"""
     <div style="margin-bottom:20px">
       <h2 style="margin:0;padding:0">Traffic Violation Analyzer</h2>
@@ -362,7 +362,7 @@ with tab_analyze:
           <div style="font-size:0.78rem; color:{SUBTLE}; margin-top:6px;">JPG · JPEG · PNG &nbsp;·&nbsp; multiple files supported for batch analysis</div>
         </div>
         """, unsafe_allow_html=True)
-        st.stop()
+        return
 
     # ── Batch mode: 2+ images uploaded ───────────────────────────────────────────
     if len(uploaded_files) > 1:
@@ -456,7 +456,7 @@ with tab_analyze:
                     saved += len(r["violations"])
             st.toast(f"Saved {saved} violation(s) across {len(batch_results)} images.")
 
-        st.stop()
+        return
 
     # ── Single-image mode ─────────────────────────────────────────────────────────
     uploaded = uploaded_files[0]
@@ -629,6 +629,10 @@ with tab_analyze:
                     "bbox":          v["bbox"],
                 } for v in violations],
             })
+
+
+with tab_analyze:
+    _render_analyze_tab()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
